@@ -5,31 +5,32 @@ import os
 from google.cloud import storage
 import jwt
 from flask import abort
+import time
 
 storage_client = storage.Client.from_service_account_json("service-account-key.json")
 
-GCS_BUCKET = os.environ["GCS_BUCKET"]
-GCS_PATH_PREFIX = os.environ["GCS_PATH_PREFIX"]
 IP_STACK_API_KEY = os.getenv("IP_STACK_API_KEY")
 JWT_SECRET = os.environ["JWT_SECRET"]
 
-CONTACT_FIELD_NAMES = 'email_address, name, phone_number, job_title, ip_address, continent, ' \
-                      'country, country_code, region_name, city, submission_token'
-CONTACT_PLACEHOLDERS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?'
+CONTACT_FIELD_NAMES = "email_address, name, phone_number, job_title, ip_address, continent, " "country, country_code, region_name, city, submission_token"
+CONTACT_PLACEHOLDERS = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
 
-Contact = NamedTuple('Contact', [
-    ('email_address', str),
-    ('name', Optional[str]),
-    ('phone_number', Optional[str]),
-    ('job_title', Optional[str]),
-    ('ip_address', Optional[str]),
-    ('continent', Optional[str]),
-    ('country', Optional[str]),
-    ('country_code', Optional[str]),
-    ('region_name', Optional[str]),
-    ('city', Optional[str]),
-    ('submission_token', Optional[str]),
-])
+Contact = NamedTuple(
+    "Contact",
+    [
+        ("email_address", str),
+        ("name", Optional[str]),
+        ("phone_number", Optional[str]),
+        ("job_title", Optional[str]),
+        ("ip_address", Optional[str]),
+        ("continent", Optional[str]),
+        ("country", Optional[str]),
+        ("country_code", Optional[str]),
+        ("region_name", Optional[str]),
+        ("city", Optional[str]),
+        ("submission_token", Optional[str]),
+    ],
+)
 
 
 def create_database() -> sqlite3.Connection:
@@ -59,7 +60,9 @@ def create_database() -> sqlite3.Connection:
 
 def fetch_database() -> Optional[sqlite3.Connection]:
     """ Attempts to fetch the database, returns None if not found """
-    blob = storage_client.get_bucket(GCS_BUCKET).get_blob(GCS_PATH_PREFIX + "/contacts.sqlite")
+    blob = storage_client.get_bucket(os.environ["GCS_BUCKET"]).get_blob(
+        os.environ["GCS_PATH_PREFIX"] + "/contacts.sqlite"
+    )
     if blob is None:
         return None
 
@@ -79,8 +82,8 @@ def fetch_or_create_database() -> sqlite3.Connection:
 def upload_database():
     with open("/tmp/contacts.sqlite", "rb") as db_file:
         return (
-            storage_client.get_bucket(GCS_BUCKET)
-            .blob(GCS_PATH_PREFIX + "/contacts.sqlite")
+            storage_client.get_bucket(os.environ["GCS_BUCKET"])
+            .blob(os.environ["GCS_PATH_PREFIX"] + "/contacts.sqlite")
             .upload_from_file(db_file)
         )
 
@@ -92,24 +95,32 @@ def get_jwt(request) -> str:
     auth_type, token = auth_string.split(" ", 1)
     if auth_type != "Bearer":
         raise ValueError("Only Bearer authorization valid")
-    _decoded = jwt.decode(token, JWT_SECRET)
+    decoded = jwt.decode(token, JWT_SECRET)
+    if "ip_address" not in decoded:
+        raise ValueError("Malformed authorization token")
+    if decoded["ip_address"] != get_ip(request):
+        raise ValueError("Requestor doesn't match provided token")
     return token
+
+
+def get_ip(request):
+    headers_list = request.headers.getlist("X-Forwarded-For")
+    return headers_list[0] if headers_list else request.remote_addr
 
 
 def parse_contact(request) -> Contact:
     """ Parse a contact from the request """
     jwt = get_jwt(request)
 
-    result = {
-        "submission_token": jwt,
-        **request.get_json(),
-    }
+    result = request.get_json()
+    result["ip_address"] = get_ip(request)
+    result["submission_token"] = jwt
 
     if IP_STACK_API_KEY:
         pass
-    
+
     for key in dir(Contact):
-        if key == 'index' or key == 'count' or key.startswith('_'):
+        if key == "index" or key == "count" or key.startswith("_"):
             continue
         if key not in result:
             result[key] = None
@@ -125,6 +136,14 @@ def save_contact(contact: Contact):
     )
     conn.commit()
     upload_database()
+
+
+def issue_jwt(request):
+    return (
+        '{"jwt": "'
+        + jwt.encode({"ip_address": get_ip(request), "iat": time.time()}, JWT_SECRET).decode()
+        + '"}'
+    )
 
 
 def contact_form_put(request):
