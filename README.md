@@ -24,6 +24,15 @@ $ make deploy-jwt
 $ make deploy-contact
 ```
 
+## Accessing Contacts
+
+Example:
+
+```bash
+$ gsutil cp gs://${GCS_BUCKET}/${GCS_PATH_PREFIX}/contacts.sqlite /tmp/contacts.sqlite
+$ sqlite3 /tmp/contacts.sqlite 'select email_address from contacts;'
+```
+
 ## TODO
 
 - Add IP stack integration to turn IP into location, etc.
