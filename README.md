@@ -17,7 +17,7 @@ Set the following env vars:
 
 I recommend using [direnv](https://direnv.net/) for these.
 
-This will create and update a sqlite database at `gs://$GCS_BUCKET/$GCS_PATH_PREFIX/contacts.sqlite`.  Also, make sure that `./service-account-key.json` is a GCP service account that has sufficient access (GCS admin, IIRC).  Then, to deploy:
+This will create and update a sqlite database at `gs://$GCS_BUCKET/$GCS_PATH_PREFIX/contacts.sqlite`.  Also, make sure that `./service-account-key.json` is a GCP service account that has sufficient access (GCS admin, IIRC).  You may want to `git update-index --assume-unchanged service-account-key.json` to ensure you don't accidently commit your key.  Then, to deploy:
 
 ```bash
 $ make deploy-jwt
