@@ -4,7 +4,7 @@ from typing import Optional, NamedTuple
 import os
 from google.cloud import storage
 import jwt
-from flask import abort
+from flask import abort, Response
 import time
 
 storage_client = storage.Client.from_service_account_json("service-account-key.json")
@@ -138,16 +138,29 @@ def save_contact(contact: Contact):
     upload_database()
 
 
+def cors_wrap(request, raw_resp):
+    resp = Response(raw_resp)
+    resp.headers["Access-Control-Allow-Origin"] = request.headers["Origin"]
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return resp
+
+
 def issue_jwt(request):
-    return (
+    if request.method == "OPTIONS":
+        return cors_wrap(request, "")
+    return cors_wrap(
+        request,
         '{"jwt": "'
         + jwt.encode({"ip_address": get_ip(request), "iat": time.time()}, JWT_SECRET).decode()
-        + '"}'
+        + '"}',
     )
 
 
 def contact_form_put(request):
     """ Accept contact PUT request """
+    if request.method == "OPTIONS":
+        return cors_wrap(request, "")
     try:
         save_contact(parse_contact(request))
     except jwt.InvalidSignatureError:
@@ -155,4 +168,4 @@ def contact_form_put(request):
     except ValueError as e:
         print(e)
         abort(400)
-    return '{"status": "ok"}'
+    return cors_wrap(request, '{"status": "ok"}')
