@@ -1,2 +1,4 @@
 .envrc
 .vscode
+service-account-key.json
+__pycache__/

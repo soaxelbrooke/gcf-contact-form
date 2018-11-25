@@ -17,4 +17,3 @@
 .vscode
 Makefile
 node_modules
-#!include:.gitignore
