@@ -28,6 +28,7 @@ $ make deploy-contact
 
 - Add IP stack integration to turn IP into location, etc.
 - Update function to pull request/domain and insert it along with contact info
+- Add proper CORS handling (see main.py - `def cors_wrap`)
 
 ## License
 
