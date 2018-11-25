@@ -1,6 +1,7 @@
 
 .PHONY: deploy-contact deploy-jwt test fmt
 
+
 deploy-jwt:
 	gcloud beta functions deploy issue_jwt --entry-point=issue_jwt --runtime=python37 --trigger-http --memory=128MB --set-env-vars JWT_SECRET=$$JWT_SECRET --project=$(GCP_PROJECT)
 

@@ -1,19 +1,23 @@
 
 # GCF Contact Form
 
-A contact form that writes to a sqlite database hosted on Google Cloud Functions.
+_Stop paying $10 per month for a contact form._
+
+Writes to a sqlite database stored in Google Cloud Storage, hosted on Google Cloud Functions, for ~$0 per month.
 
 ## Deployment
 
 Set the following env vars:
 
-- `JWT_SECRET`
+- `JWT_SECRET` - used to verify 
 - `GCP_PROJECT`
 - `GCS_BUCKET`
 - `GCS_PATH_PREFIX`
 - `IP_STACK_API_KEY` (optional)
 
-This will create a sqlite database at `gs://$GCS_BUCKET/$GCS_PATH_PREFIX/contacts.sqlite`.  Also, make sure that `./service-account-key.json` is a GCP service account that has sufficient access (GCS admin, IIRC).  Then to deploy:
+I recommend using [direnv](https://direnv.net/) for these.
+
+This will create and update a sqlite database at `gs://$GCS_BUCKET/$GCS_PATH_PREFIX/contacts.sqlite`.  Also, make sure that `./service-account-key.json` is a GCP service account that has sufficient access (GCS admin, IIRC).  Then, to deploy:
 
 ```bash
 $ make deploy-jwt
