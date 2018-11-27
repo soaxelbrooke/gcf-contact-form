@@ -6,6 +6,8 @@ from google.cloud import storage
 import jwt
 from flask import abort, Response
 import time
+import requests
+import logging
 
 storage_client = storage.Client.from_service_account_json("service-account-key.json")
 
@@ -105,7 +107,31 @@ def get_jwt(request) -> str:
 
 def get_ip(request):
     headers_list = request.headers.getlist("X-Forwarded-For")
-    return headers_list[0] if headers_list else request.remote_addr
+    return (headers_list[0] if headers_list else request.remote_addr).split(',')[0]
+
+
+def add_ip_info(contact: Contact) -> Contact:
+    if IP_STACK_API_KEY is None:
+        return contact
+    request_uri = f"http://api.ipstack.com/{contact.ip_address}?access_key={IP_STACK_API_KEY}"
+    resp = requests.get(request_uri)
+    if resp.status_code != 200:
+        logging.error(f"Got {resp.status_code} from ipstack: {resp.body}")
+        return contact
+    ip_data = resp.json()
+    return Contact(
+        email_address=contact.email_address,
+        name=contact.name,
+        phone_number=contact.phone_number,
+        job_title=contact.job_title,
+        ip_address=contact.ip_address,
+        continent=ip_data.get("continent_name"),
+        country=ip_data.get("country_name"),
+        country_code=ip_data.get("country_code"),
+        region_name=ip_data.get("region_name"),
+        city=ip_data.get("city"),
+        submission_token=contact.submission_token,
+    )
 
 
 def parse_contact(request) -> Contact:
@@ -116,16 +142,13 @@ def parse_contact(request) -> Contact:
     result["ip_address"] = get_ip(request)
     result["submission_token"] = jwt
 
-    if IP_STACK_API_KEY:
-        pass
-
     for key in dir(Contact):
         if key == "index" or key == "count" or key.startswith("_"):
             continue
         if key not in result:
             result[key] = None
 
-    return Contact(**result)
+    return add_ip_info(Contact(**result))
 
 
 def save_contact(contact: Contact):
