@@ -14,6 +14,11 @@ Set the following env vars:
 - `GCS_BUCKET`
 - `GCS_PATH_PREFIX`
 - `IP_STACK_API_KEY` (optional)
+- email vars (optional)
+    - `MAILGUN_API_KEY`
+    - `MAILGUN_DOMAIN`
+    - `MAIL_FROM`
+    - `MAIL_TO`
 
 I recommend using [direnv](https://direnv.net/) for these.
 

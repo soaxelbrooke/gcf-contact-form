@@ -1,7 +1,7 @@
 
 const ENDPOINT_URL = 'https://us-central1-axelbrooke-com.cloudfunctions.net/';
 
-const jwtPromise = fetch(ENDPOINT_URL + 'issue_jwt');
+const jwtPromise = fetch(ENDPOINT_URL + 'contact_form_jwt');
 
 const submitForm = (evt) => {
     const formData = {
