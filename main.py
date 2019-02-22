@@ -8,14 +8,22 @@ from flask import abort, Response
 import time
 import requests
 import logging
+import smtplib
+from email.mime.text import MIMEText
 
 storage_client = storage.Client.from_service_account_json("service-account-key.json")
 
 IP_STACK_API_KEY = os.getenv("IP_STACK_API_KEY")
 JWT_SECRET = os.environ["JWT_SECRET"]
+MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
+MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
+MAIL_FROM = os.getenv("MAIL_FROM")
+MAIL_TO = os.getenv("MAIL_TO")
+MAILGUN_SMTP_USER = os.getenv("MAILGUN_SMTP_USER")
+MAILGUN_SMTP_PASSWORD = os.getenv("MAILGUN_SMTP_PASSWORD")
 
-CONTACT_FIELD_NAMES = "email_address, name, phone_number, job_title, ip_address, continent, " "country, country_code, region_name, city, submission_token"
-CONTACT_PLACEHOLDERS = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+CONTACT_FIELD_NAMES = "email_address, name, phone_number, job_title, ip_address, continent, " "country, country_code, region_name, city, submission_token, inquiry, host, labels, details"
+CONTACT_PLACEHOLDERS = "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
 
 Contact = NamedTuple(
     "Contact",
@@ -31,12 +39,16 @@ Contact = NamedTuple(
         ("region_name", Optional[str]),
         ("city", Optional[str]),
         ("submission_token", Optional[str]),
+        ("inquiry", Optional[str]),
+        ("host", Optional[str]),
+        ("labels", Optional[str]),
+        ("details", Optional[str]),
     ],
 )
 
 
 def create_database() -> sqlite3.Connection:
-    conn = sqlite3.connect("contacts.sqlite")
+    conn = sqlite3.connect("/tmp/contacts.sqlite")
     conn.execute(
         """
         create table contacts (
@@ -52,7 +64,11 @@ def create_database() -> sqlite3.Connection:
             region_name text,
             city text,
             created_at text not null,
-            submission_token text not null
+            submission_token text not null,
+            inquiry text,
+            host text,
+            labels text,
+            details text
         );
     """
     )
@@ -107,7 +123,7 @@ def get_jwt(request) -> str:
 
 def get_ip(request):
     headers_list = request.headers.getlist("X-Forwarded-For")
-    return (headers_list[0] if headers_list else request.remote_addr).split(',')[0]
+    return (headers_list[0] if headers_list else request.remote_addr).split(",")[0]
 
 
 def add_ip_info(contact: Contact) -> Contact:
@@ -131,6 +147,10 @@ def add_ip_info(contact: Contact) -> Contact:
         region_name=ip_data.get("region_name"),
         city=ip_data.get("city"),
         submission_token=contact.submission_token,
+        inquiry=contact.inquiry,
+        host=contact.host,
+        labels=contact.labels,
+        details=contact.details,
     )
 
 
@@ -141,6 +161,8 @@ def parse_contact(request) -> Contact:
     result = request.get_json()
     result["ip_address"] = get_ip(request)
     result["submission_token"] = jwt
+    if "host" not in result:
+        result["host"] = request.headers["Origin"]
 
     for key in dir(Contact):
         if key == "index" or key == "count" or key.startswith("_"):
@@ -161,6 +183,28 @@ def save_contact(contact: Contact):
     upload_database()
 
 
+def send_email_notification(contact: Contact):
+    contact_data = "\n".join(f"{key}:{value}" for key, value in contact._asdict().items() if value is not None)
+    text = f"A new contact has been submitted:\n\n{contact_data}"
+
+    if any(
+        (config is None) or (config == "")
+        for config in (MAILGUN_SMTP_USER, MAILGUN_SMTP_PASSWORD, MAIL_TO, MAIL_FROM)
+    ):
+        raise ValueError(f"One of {(MAILGUN_SMTP_USER, MAILGUN_SMTP_USER, MAIL_TO, MAIL_FROM)} was empty")
+
+    msg = MIMEText(text)
+    msg['Subject'] = "New Contact Submission"
+    msg['From']    = MAIL_FROM
+    msg['To']      = MAIL_TO
+    s = smtplib.SMTP('smtp.mailgun.org', 587)
+
+    s.login(MAILGUN_SMTP_USER, MAILGUN_SMTP_PASSWORD)
+    res = s.sendmail(msg['From'], msg['To'], msg.as_string())
+    s.quit()
+    return res
+
+
 def cors_wrap(request, raw_resp):
     resp = Response(raw_resp)
     resp.headers["Access-Control-Allow-Origin"] = request.headers["Origin"]
@@ -169,7 +213,7 @@ def cors_wrap(request, raw_resp):
     return resp
 
 
-def issue_jwt(request):
+def contact_form_jwt(request):
     if request.method == "OPTIONS":
         return cors_wrap(request, "")
     return cors_wrap(
@@ -185,7 +229,9 @@ def contact_form_put(request):
     if request.method == "OPTIONS":
         return cors_wrap(request, "")
     try:
-        save_contact(parse_contact(request))
+        contact = parse_contact(request)
+        save_contact(contact)
+        send_email_notification(contact)
     except jwt.InvalidSignatureError:
         abort(403)
     except ValueError as e:
